@@ -1,0 +1,13 @@
+node_modules/
+coverage/
+.DS_Store
+Thumbs.db
+*.log
+*.asar
+*.bak
+*.exe
+*.dll
+*.zip
+*.center-tmp
+.env
+.env.*

@@ -1,0 +1,12 @@
+{
+  "name": "typora-center-plugin",
+  "version": "1.0.0",
+  "description": "为 Typora 的格式菜单添加文字和标题居中功能。",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test tests/install.test.cjs"
+  }
+}
