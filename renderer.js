@@ -1,4 +1,4 @@
-/* Typora Center 1.0.0 — persistent paragraph/heading alignment. */
+/* Typora Center 1.0.1 — persistent paragraph/heading alignment. */
 (function () {
   'use strict';
   if (window.TyporaCenter) return;
@@ -130,5 +130,5 @@
     } finally { busy = false; }
   }
 
-  window.TyporaCenter = { version: '1.0.0', toggle, centered, unwrap };
+  window.TyporaCenter = { version: '1.0.1', toggle, centered, unwrap };
 })();

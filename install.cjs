@@ -2,7 +2,8 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { patchLauncher } = require('./archive.cjs');
+const { read, patchLauncher } = require('./archive.cjs');
+const { installPage } = require('./legacy-install.cjs');
 const marker = 'TYPORA_CENTER_BOOTSTRAP_V1';
 const hash = data => crypto.createHash('sha256').update(data).digest('hex');
 
@@ -29,6 +30,8 @@ function install(directory, uninstall = false) {
   const manifestPath = path.join(plugin, 'installation.json');
   if (!fs.existsSync(archivePath)) throw new Error('找不到 Typora/resources/app.asar，请检查安装路径。');
   const current = fs.readFileSync(archivePath);
+  const header = read(current).header;
+  if (!header.files['launch.dist.js'] && header.files['main.node']) return installPage(resources, uninstall);
   const manifest = fs.existsSync(manifestPath) ? JSON.parse(fs.readFileSync(manifestPath, 'utf8')) : null;
 
   if (uninstall) {
@@ -50,14 +53,15 @@ function install(directory, uninstall = false) {
     // Preserve older backups after a Typora update; never overwrite an unknown backup.
     fs.copyFileSync(backupPath, backupPath + '.' + Date.now() + '.bak', fs.constants.COPYFILE_EXCL);
   }
+  const bootstrap = `/* ${marker} */\n'use strict';\nconst path = require('path');\nconst original = path.join(process.resourcesPath, 'typora-center-original.asar');\nrequire('./../typora-center/main.cjs');\nrequire('electron').app.setAppPath(original);\nrequire(path.join(original, 'launch.dist.js'));\n`;
+  // Validate compatibility before creating files in the installation directory.
+  const patched = patchLauncher(original, () => bootstrap);
   fs.mkdirSync(plugin, { recursive: true });
   for (const file of ['main.cjs', 'renderer.js']) fs.copyFileSync(path.join(__dirname, file), path.join(plugin, file));
   if (alreadyInstalled) return console.log('已更新居中插件。保存文档后重新启动 Typora 生效。');
 
-  const bootstrap = `/* ${marker} */\n'use strict';\nconst path = require('path');\nconst original = path.join(process.resourcesPath, 'typora-center-original.asar');\nrequire('./../typora-center/main.cjs');\nrequire('electron').app.setAppPath(original);\nrequire(path.join(original, 'launch.dist.js'));\n`;
-  const patched = patchLauncher(original, () => bootstrap);
   fs.writeFileSync(backupPath, original);
-  fs.writeFileSync(manifestPath, JSON.stringify({ version:'1.0.0', installedAt:new Date().toISOString(), originalHash:hash(original), installedHash:hash(patched) }, null, 2));
+  fs.writeFileSync(manifestPath, JSON.stringify({ version:'1.0.1', installedAt:new Date().toISOString(), originalHash:hash(original), installedHash:hash(patched) }, null, 2));
   // Prepare the complete replacement before replacing the entry point.
   replaceArchive(archivePath, patched);
   console.log('已安装“格式 → 居中”。快捷键 Ctrl+Shift+E。保存文档后重新启动 Typora 生效。');

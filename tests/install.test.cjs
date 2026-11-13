@@ -11,17 +11,18 @@ const { install } = require('../install.cjs');
 
 const digest = data => crypto.createHash('sha256').update(data).digest('hex');
 
-function fixtureArchive() {
-  const launcher = Buffer.from("'use strict';\nmodule.exports = 'fixture';\n");
+function fixtureArchive(native = false) {
+  const launcher = Buffer.from(native ? JSON.stringify({ name: 'Typora', version: '1.9.5', main: 'main.node' }) : "'use strict';\nmodule.exports = 'fixture';\n");
   const asset = Buffer.from([0, 1, 2, 255]);
   const header = Buffer.from(JSON.stringify({ files: {
-    'launch.dist.js': {
+    [native ? 'package.json' : 'launch.dist.js']: {
       size: launcher.length,
       offset: '0',
       integrity: { algorithm: 'SHA256', hash: digest(launcher), blockSize: 8,
         blocks: Array.from({ length: Math.ceil(launcher.length / 8) }, (_, i) => digest(launcher.subarray(i * 8, i * 8 + 8))) },
     },
     assets: { files: { 'sample.bin': { size: asset.length, offset: String(launcher.length) } } },
+    ...(native ? { 'main.node': { size: 1234, unpacked: true } } : {}),
   } }));
   const padding = (4 - header.length % 4) % 4;
   const size = Buffer.alloc(16);
@@ -32,7 +33,7 @@ function fixtureArchive() {
   return Buffer.concat([size, header, Buffer.alloc(padding), launcher, asset]);
 }
 
-function fixture(t) {
+function fixture(t, native = false) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'typora-center-test-'));
   t.after(() => {
     assert(path.resolve(directory).startsWith(path.resolve(os.tmpdir()) + path.sep));
@@ -41,7 +42,7 @@ function fixture(t) {
   const resources = path.join(directory, 'resources');
   fs.mkdirSync(resources);
   const archivePath = path.join(resources, 'app.asar');
-  const original = fixtureArchive();
+  const original = fixtureArchive(native);
   fs.writeFileSync(archivePath, original);
   return { directory, resources, archivePath, original };
 }
@@ -74,6 +75,37 @@ test('安装、重复安装和卸载完整还原原程序', t => {
   install(directory);
   assert.deepEqual(fs.readFileSync(archivePath), installed);
   install(directory, true);
+  assert.deepEqual(fs.readFileSync(archivePath), original);
+});
+
+test('1.9.5 页面安装、更新和卸载，保持原生入口不变', t => {
+  const { directory, resources, archivePath, original } = fixture(t, true);
+  const page = path.join(resources, 'window.html');
+  const source = Buffer.from('<!doctype html><html><body><div id="write"></div></body></html>');
+  fs.writeFileSync(page, source);
+  install(directory);
+  const installed = fs.readFileSync(page);
+  assert.notDeepEqual(installed, source);
+  assert.deepEqual(fs.readFileSync(archivePath), original);
+  assert.deepEqual(fs.readFileSync(path.join(resources, 'typora-center-original-window.html')), source);
+  assert(installed.includes(Buffer.from('./typora-center/renderer.js')));
+  assert(installed.includes(Buffer.from('./typora-center/legacy.js')));
+  install(directory);
+  assert.deepEqual(fs.readFileSync(page), installed);
+  install(directory, true);
+  assert.deepEqual(fs.readFileSync(page), source);
+  assert.deepEqual(fs.readFileSync(archivePath), original);
+});
+
+test('1.9.5 页面更新后拒绝覆盖还原', t => {
+  const { directory, resources, archivePath, original } = fixture(t, true);
+  const page = path.join(resources, 'window.html');
+  fs.writeFileSync(page, '<html><body></body></html>');
+  install(directory);
+  fs.appendFileSync(page, '<!-- Typora update -->');
+  const updated = fs.readFileSync(page);
+  assert.throws(() => install(directory, true), /已变化/);
+  assert.deepEqual(fs.readFileSync(page), updated);
   assert.deepEqual(fs.readFileSync(archivePath), original);
 });
 
